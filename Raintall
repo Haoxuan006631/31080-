@@ -1,0 +1,225 @@
+import controlP5.*;
+Table rainData;
+float maxRain;
+int[] rainArray;
+String[] timeArray;
+ArrayList<RainDrop> rainDrops; 
+float currentRainLevel = 0; 
+
+ControlP5 cp5;
+
+float xZoomFactor = 1.0;  // Controls X-axis zoom, initial value 1 (show all)
+int viewStart = 0;
+int viewEnd;
+
+void setup() {
+  size(2000, 1000);
+  rainDrops = new ArrayList<RainDrop>();
+  cp5 = new ControlP5(this);
+  
+  cp5.addSlider("xZoomFactor")
+     .setPosition(50, height - 50)
+     .setRange(1, 50)    // Zoom range from 1x to 50x
+     .setValue(40)       // Initial zoom factor 15x
+     .setSize(200, 20)
+     .setLabel("X Zoom")
+     .setColorForeground(color(228, 254, 5));  
+        
+  rainData = loadTable("https://eif-research.feit.uts.edu.au/api/csv/?rFromDate=2024-01-01T11%3A52%3A35&rToDate=2024-09-18T11%3A52%3A35&rFamily=weather&rSensor=RT", "csv,header");
+  
+  rainArray = new int[rainData.getRowCount()];
+  timeArray = new String[rainData.getRowCount()];
+
+  for (int i = 0; i < rainData.getRowCount(); i++) {
+    rainArray[i] = int(rainData.getFloat(i, 1)); 
+    timeArray[i] = rainData.getString(i, 0);    
+  }
+
+  maxRain = max(rainArray);
+  viewEnd = rainArray.length; 
+}
+
+void draw() {
+  background(70,130,180); 
+  
+  drawRainBackground(currentRainLevel);
+  
+  int graphMargin = 100; 
+  int graphWidth = width - 2 * graphMargin;
+  int graphHeight = height - 2 * graphMargin;
+  
+  int windowSizeX = int((rainArray.length) / xZoomFactor);
+  
+  windowSizeX = constrain(windowSizeX, 10, rainArray.length);
+  
+  int centerX = (viewStart + viewEnd) / 2;
+  
+  viewStart = centerX - windowSizeX / 2;
+  viewEnd = centerX + windowSizeX / 2;
+  
+  if (viewStart < 0) {
+    viewStart = 0;
+    viewEnd = windowSizeX;
+  }
+  if (viewEnd > rainArray.length) {
+    viewEnd = rainArray.length;
+    viewStart = rainArray.length - windowSizeX;
+    viewStart = max(0, viewStart);
+  }
+  
+  drawBarGraph(graphMargin, graphWidth, graphHeight, viewStart, viewEnd);
+  
+  checkMouseHover(graphMargin, graphWidth, graphHeight, viewStart, viewEnd);
+  
+}
+
+void drawBarGraph(int graphMargin, int graphWidth, int graphHeight, int start, int end) {
+  stroke(0);
+  fill(0);
+  textSize(24);
+  fill(255);
+  textAlign(CENTER);
+  text("Rain Gauge Data Over Time", width / 2, 50);
+  textSize(16);
+  fill(255);
+  textAlign(LEFT);
+  text("Rain (mm)", graphMargin - 50, graphMargin - 20);
+  textAlign(RIGHT);
+  text("Time", width - graphMargin + 50, height - graphMargin + 40);
+  stroke(255);
+  strokeWeight(2);
+  line(graphMargin, graphMargin, graphMargin, height - graphMargin); 
+  line(graphMargin, height - graphMargin, width - graphMargin, height - graphMargin); 
+  
+  int numBars = end - start;
+  float barWidth = (float) graphWidth / numBars * 0.8; // 80% width for bars
+  float barSpacing = (float) graphWidth / numBars * 0.2; // 20% spacing
+  
+  noStroke();
+  fill(228, 254, 5); // Bar color (bright yellow)
+  
+  for (int i = start; i < end; i++) {  
+    float x = map(i, viewStart, viewEnd - 1, graphMargin, width - graphMargin) - barWidth / 2;
+    float barHeight = map(rainArray[i], 0, maxRain, 0, graphHeight);
+    float y = height - graphMargin - barHeight;
+    
+    rect(x, y, barWidth, barHeight);
+    
+    if ((i - start) % max(1, (end - start) / 10) == 0) { 
+      fill(255);
+      textSize(12);
+      textAlign(CENTER);
+      text(timeArray[i], x + barWidth / 2, height - graphMargin + 20);
+    }
+    
+    if ((i - start) % max(1, (end - start) / 20) == 0) { // Adjust rainfall label frequency
+      fill(255);
+      textSize(10);
+      textAlign(RIGHT);
+      text(rainArray[i] + " mm", graphMargin - 10, y);
+    }
+  }
+}
+
+void checkMouseHover(int graphMargin, int graphWidth, int graphHeight, int start, int end) {
+  // Define a threshold to reduce computation
+  int hoverThreshold = 10;
+  
+  int numBars = end - start;
+  float barWidth = (float) graphWidth / numBars * 0.7;
+  float barSpacing = (float) graphWidth / numBars * 0.3;
+
+  for (int i = start; i < end; i++) {
+    float x = map(i, viewStart, viewEnd - 1, graphMargin, width - graphMargin) - barWidth / 2;
+    float barHeight = map(rainArray[i], 0, maxRain, 0, graphHeight);
+    float y = height - graphMargin - barHeight;
+    
+    if (mouseX >= x && mouseX <= x + barWidth && mouseY >= y && mouseY <= height - graphMargin) { 
+      fill(0);
+      textSize(12);
+      textAlign(CENTER);
+      
+      String info = "Time: " + timeArray[i] + ", Rain: " + rainArray[i] + " mm";
+      text(info, mouseX, mouseY - 10); 
+      fill(255, 0, 0);
+      noStroke();
+      ellipse(x + barWidth / 2, y, 10, 10);
+      
+      currentRainLevel = map(rainArray[i], 0, maxRain, 0, 1);      
+    }
+  }
+}
+
+void drawRainBackground(float rainLevel) {
+  if (random(1) < rainLevel * 0.5) { 
+    rainDrops.add(new RainDrop());
+  }
+
+  for (int i = rainDrops.size() - 1; i >= 0; i--) {
+    RainDrop drop = rainDrops.get(i);
+    drop.update();
+    drop.display();
+    
+    if (drop.y > height) {
+      rainDrops.remove(i);
+    }
+  }
+}
+
+class RainDrop {
+  float x, y;
+  float speed;
+  float length;
+  float transparency;
+
+  RainDrop() {
+    x = random(width);    
+    y = random(-100, -10); 
+    speed = random(2, 5); 
+    length = random(20, 45); 
+    transparency = random(120, 255); 
+  }
+
+  void update() {
+    y += speed; 
+  }
+
+  void display() {
+    stroke(176,196,222, transparency); 
+    strokeWeight(2);
+    line(x, y, x, y + length);
+  }
+}
+
+boolean dragging = false;
+int lastMouseX;
+int lastMouseY;
+
+void mousePressed() {
+  if (mouseButton == LEFT) {
+    dragging = true;
+    lastMouseX = mouseX + 5;
+    lastMouseY = mouseY + 5;
+  }
+}
+
+void mouseReleased() {
+  if (mouseButton == LEFT) {
+    dragging = false;
+  }
+}
+
+void mouseDragged() {
+  if (dragging) {
+    int deltaX = mouseX - lastMouseX;
+    int deltaY = mouseY - lastMouseY;
+    lastMouseX = mouseX;
+    lastMouseY = mouseY;
+    
+    int windowSizeX = viewEnd - viewStart;
+    float dataPerPixelX = (float) windowSizeX / (width - 2 * 100); // graphMargin = 100
+    int deltaDataX = int(-deltaX * dataPerPixelX);
+    viewStart += deltaDataX;
+    viewEnd += deltaDataX;   
+  }
+}
